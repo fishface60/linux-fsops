@@ -753,9 +753,12 @@ cleanup:
 
 int open_tmpfile(const char *target, char **tmpfn_out) {
     char *template = malloc(strlen(target) + sizeof("./.tmpXXXXXX"));
+    char *dir = NULL;
     int ret;
     strcpy(template, target);
-    strcpy(template, dirname(template));
+    dir = dirname(template);
+    if (dir != template)
+        strcpy(template, dir);
     strcat(template, "/");
     strcat(template, ".tmp");
     strcat(template, basename(target));
@@ -763,6 +766,8 @@ int open_tmpfile(const char *target, char **tmpfn_out) {
     ret = mkstemp(template);
     if (ret >= 0)
         *tmpfn_out = template;
+    else
+        free(template);
     return ret;
 }
 
@@ -879,6 +884,7 @@ xdev:
     ret = unlink(source);
     if (ret < 0)
         perror("unlink");
+    return ret;
 }
 
 void strip_trailing_slashes(char *s) {
