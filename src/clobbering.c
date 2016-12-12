@@ -24,30 +24,12 @@
 #include <stdio.h>       /* rename* */
 #include <limits.h>      /* SSIZE_MAX */
 
-#if !HAVE_DECL_RENAMEAT2
-#include <sys/syscall.h> /* __NR_* */
-static inline int renameat2(int oldfd, const char *oldname, int newfd, const char *newname, unsigned flags) {
-    return syscall(__NR_renameat2, oldfd, oldname, newfd, newname, flags);
-}
-#endif
+#include "clobber.h"     /* CLOBBER_* */
+#include "copy.h"        /* copy_contents */
+#include "missing.h"     /* RENAME_*, SEEK_*, renameat2 */
 
-#ifndef RENAME_NOREPLACE
-#define RENAME_NOREPLACE (1<<0)
-#endif
-#ifndef RENAME_EXCHANGE
-#define RENAME_EXCHANGE (1<<1)
-#endif
-
-enum clobber {
-    CLOBBER_PERMITTED     = 'p',
-    CLOBBER_REQUIRED      = 'R',
-    CLOBBER_FORBIDDEN     = 'N',
-    CLOBBER_TRY_REQUIRED  = 'r',
-    CLOBBER_TRY_FORBIDDEN = 'n',
-};
-
-int create_file(const char *path, mode_t mode, int flags,
-                enum clobber clobber) {
+static int create_file(const char *path, mode_t mode, int flags,
+                       enum clobber clobber) {
     switch (clobber) {
         case CLOBBER_PERMITTED:
             flags |= O_CREAT;
@@ -66,7 +48,7 @@ int create_file(const char *path, mode_t mode, int flags,
     return open(path, flags, mode);
 }
 
-int rename_file(const char *src, const char *tgt, enum clobber clobber) {
+static int rename_file(const char *src, const char *tgt, enum clobber clobber) {
     int ret = -1;
     int renameflags = 0;
 
@@ -99,32 +81,6 @@ int rename_file(const char *src, const char *tgt, enum clobber clobber) {
 
 cleanup:
     return ret;
-}
-
-ssize_t copy_range(int srcfd, int tgtfd, size_t range) {
-    char buf[4 * 1024 * 1024];
-    size_t copied = 0;
-    while (range > copied) {
-        size_t to_copy = range - copied;
-        ssize_t n_read;
-        n_read = TEMP_FAILURE_RETRY(read(srcfd, buf,
-                to_copy > sizeof(buf) ? sizeof(buf) : to_copy));
-        if (n_read < 0) {
-            return n_read;
-        }
-        if (n_read == 0)
-            break;
-
-        while (n_read > 0) {
-            ssize_t n_written = TEMP_FAILURE_RETRY(write(tgtfd, buf, n_read));
-            if (n_written < 0)
-                return n_written;
-
-            n_read -= n_written;
-            copied += n_written;
-        }
-    }
-    return copied;
 }
 
 int main(int argc, char *argv[]) {
@@ -173,7 +129,7 @@ int main(int argc, char *argv[]) {
             return 1;
 
         do {
-            ret = copy_range(0, fd, SSIZE_MAX);
+            ret = copy_contents(0, fd);
         } while (ret > 0);
 
         if (ret != 0)
